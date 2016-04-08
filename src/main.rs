@@ -1,3 +1,5 @@
+extern crate rpg;
+
 fn main() {
-    println!("Hello, world!");
+  rpg::wr1::tests();
 }
