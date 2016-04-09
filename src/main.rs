@@ -1,5 +1,6 @@
 extern crate rpg;
 
 fn main() {
-  rpg::wr1::tests();
+  rpg::simple::tests();
+  rpg::lifetime::tests();
 }

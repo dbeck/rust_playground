@@ -1,1 +1,2 @@
-pub mod wr1;
+pub mod simple;
+pub mod lifetime;
