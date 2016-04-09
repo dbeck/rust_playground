@@ -23,8 +23,8 @@ impl <T : Copy> CircularBuffer<T> {
     ret
   }
 
-  fn put<F>(&mut self, setter: F) -> usize
-    where F : Fn(&mut T)
+  fn put<F>(&mut self, mut setter: F) -> usize
+    where F : FnMut(&mut T)
   {
     // calculate where to put the data
     let pos = self.seqno % self.data.len();
@@ -46,8 +46,13 @@ impl <T : Copy> CircularBuffer<T> {
 
 pub fn tests() {
   let mut x = CircularBuffer::new(4, 0 as i32);
-
   x.put(|v| *v = 1);
+  let mut seq  = 2;
+  let put_fn = |v : &mut i32| {
+    *v = seq;
+    seq += 1;
+  };
+  x.put(put_fn);
 }
 
 #[test]
