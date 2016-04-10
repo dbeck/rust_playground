@@ -1,5 +1,4 @@
 
-
 struct CircularBuffer<T : Copy> {
   seqno : usize,
   data  : Vec<T>,
