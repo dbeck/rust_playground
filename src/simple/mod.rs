@@ -36,7 +36,27 @@ impl <T : Copy> CircularBuffer<T> {
     }
 
     // increase sequence number
-    self.seqno = self.seqno + 1;
+    self.seqno += 1;
+    self.seqno
+  }
+
+  fn put_mut<F>(&mut self, mut setter: F) -> usize
+    where F : FnMut(&mut T)
+  {
+    // calculate where to put the data
+    let pos = self.seqno % self.data.len();
+
+    // get a reference to the data
+    let mut opt : Option<&mut T> = self.data.get_mut(pos);
+
+    // make sure the index worked
+    match opt.as_mut() {
+      Some(v) => setter(v),
+      None    => { panic!("out of bounds {}", pos); }
+    }
+
+    // increase sequence number
+    self.seqno += 1;
     self.seqno
   }
 }
@@ -44,6 +64,8 @@ impl <T : Copy> CircularBuffer<T> {
 pub fn tests() {
   let mut x = CircularBuffer::new(4, 0 as i32);
   x.put(|v| *v = 1);
+  let mut y = 0;
+  x.put_mut(|v| { *v = y; y += 1; });
 }
 
 #[test]
@@ -61,4 +83,22 @@ fn create_non_zero_sized() {
 fn can_put() {
   let mut x = CircularBuffer::new(1, 0 as i32);
   x.put(|v| *v = 1);
+}
+
+#[test]
+fn can_put_with_env() {
+  let mut x = CircularBuffer::new(1, 0 as i32);
+  let mut y = 0;
+  let my_fn = |v : &mut i32| {
+    *v = y;
+    y += 1;
+  };
+  x.put_mut(my_fn);
+}
+
+#[test]
+fn can_put_with_env2() {
+  let mut x = CircularBuffer::new(1, 0 as i32);
+  let mut y = 0;
+  x.put_mut(|v| { *v = y; y += 1; });
 }
