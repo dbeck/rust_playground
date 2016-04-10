@@ -18,8 +18,6 @@ impl <T : Copy> CircularBuffer<T> {
     // make sure there is enough place and fill it with the
     // default value
     ret.data.resize(size, default_value);
-
-    // hand over the object
     ret
   }
 
@@ -46,7 +44,6 @@ impl <T : Copy> CircularBuffer<T> {
 
 pub fn tests() {
   let mut x = CircularBuffer::new(4, 0 as i32);
-
   x.put(|v| *v = 1);
 }
 
