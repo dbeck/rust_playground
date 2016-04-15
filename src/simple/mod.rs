@@ -63,82 +63,6 @@ impl <T : Copy> CircularBuffer<T> {
     self.seqno += 1;
     self.seqno
   }
-
-  fn get(&self, at: &usize) -> (Option<&T>, usize) {
-
-    let min_pos : usize = if self.seqno < self.data.len() {
-      0
-    } else {
-      (self.seqno - self.data.len()) as usize
-    };
-
-    if *at < min_pos      { return (Option::None, min_pos);    }
-    if *at >= self.seqno  { return (Option::None, self.seqno); }
-
-    let pos = *at % self.data.len();
-
-    (self.data.get(pos), *at+1)
-  }
-
-  fn get_range<F>(&self, from: &usize, to: &usize, getter: F) -> usize
-    where F : FnMut(&T)
-  {
-    if from > to { panic!("from:{} > to:{}", from, to); }
-
-    // figure out the minimum and maximum position
-    let min_pos : usize = if self.seqno < self.data.len() {
-      0
-    } else {
-      (self.seqno - self.data.len()) as usize
-    };
-
-    let max_pos : usize = self.seqno;
-
-    // cannot return past (overwritten) elements
-    if *to < min_pos { return min_pos; }
-
-    // cannot return future elements
-    if *from >= max_pos { return max_pos; }
-
-    // constrain start to min_pos
-    let start : usize = if *from > min_pos {
-      *from
-    } else {
-      min_pos
-    };
-
-    // constrain end to max_pos
-    let end : usize = if *to > max_pos {
-      max_pos
-    } else {
-      *to
-    };
-
-    let start_pos   = start % self.data.len();
-    let end_pos     = end % self.data.len();
-    let mut getter  = getter;
-
-    let mut get_range_fn = |from_pos: usize, to_pos: usize| {
-      for i in from_pos..to_pos {
-        let act_value : Option<&T> = self.data.get(i);
-        match act_value {
-          Some(v) => { getter(v); }
-          None => { panic!("index is out of range i={}",i); }
-        };
-      }
-    };
-
-    if end_pos > start_pos {
-      // one contigous range
-      get_range_fn(start_pos, end_pos);
-    } else {
-      // range split into two
-      get_range_fn(start_pos, self.data.len());
-      get_range_fn(0, end_pos);
-    }
-
-    end
-  }
 }
 
 impl <'_, T: '_ + Copy> Iterator for CircularBufferIterator<'_, T> {
@@ -149,6 +73,7 @@ impl <'_, T: '_ + Copy> Iterator for CircularBufferIterator<'_, T> {
       None
     } else {
       let at = self.position % self.buffer.data.len();
+      self.position += 1;
       match self.buffer.data.get(at) {
         Some(v) => Some(*v),
         None => None
@@ -165,11 +90,6 @@ pub fn tests() {
   x.put(|v| { *v = y; y += 1; });
   x.put(|v| { *v = y; y += 1; });
   x.put(|v| { *v = y; y += 1; });
-
-  let ret = x.get_range( &0, &100, |val : &i32| {
-    println!("A: {}", *val);
-  });
-  println!("ret={} min_pos={}", ret,x.min_pos());
 
   let it = x.iter();
   for i in it {
