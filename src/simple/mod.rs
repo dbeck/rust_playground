@@ -124,6 +124,19 @@ mod tests {
   }
 
   #[test]
+  fn sum_available() {
+    let mut x = CircularBuffer::new(4, 0 as i32);
+    x.put(|v| *v = 2);
+    x.put(|v| *v = 4);
+    x.put(|v| *v = 6);
+    x.put(|v| *v = 8);
+    x.put(|v| *v = 10);
+    assert_eq!(x.iter().count(), 4);
+    let sum = x.iter().take(3).fold(0, |acc, num| acc + num);
+    assert_eq!(sum, 18);
+  }
+
+  #[test]
   fn can_put_with_env() {
     let mut x = CircularBuffer::new(1, 0 as i32);
     let mut y = 0;
