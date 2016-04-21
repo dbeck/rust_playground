@@ -5,9 +5,11 @@ struct CircularBuffer<T : Copy> {
 }
 
 struct CircularBufferIterator<'a, T: 'a + Copy> {
-  buffer    : &'a CircularBuffer<T>,
-  position  : usize,
-  limit     : usize,
+  slice  : &'a [T],
+  start  : usize,
+  end    : usize,
+  pos    : usize,
+  wrap   : bool,
 }
 
 impl <T : Copy> CircularBuffer<T> {
@@ -35,11 +37,40 @@ impl <T : Copy> CircularBuffer<T> {
   }
 
   fn iter(&self) -> CircularBufferIterator<T> {
-    CircularBufferIterator{
-      buffer    : self,
-      position  : self.min_pos(),
-      limit     : self.seqno
-     }
+
+    let min  = self.min_pos();
+    let max  = self.seqno;
+    let sz   = self.data.len();
+
+    let min_pos  = min % sz;
+    let max_pos  = max % sz;
+
+    if self.seqno == 0 { // no data
+      CircularBufferIterator {
+        slice  : self.data.as_slice(),
+        start  : 0,
+        end    : 0,
+        pos    : 1,
+        wrap   : false,
+      }
+    }
+    else if min_pos < max_pos { // no wrap over
+      CircularBufferIterator {
+        slice  : self.data.as_slice(),
+        start  : min_pos,
+        end    : max_pos,
+        pos    : min_pos,
+        wrap   : false,
+      }
+    } else {
+      CircularBufferIterator {
+        slice  : self.data.as_slice(),
+        start  : max_pos,
+        end    : sz,
+        pos    : max_pos,
+        wrap   : (max_pos != 0),
+      }
+    }
   }
 
   fn put<F>(&mut self, setter: F) -> usize
@@ -69,15 +100,19 @@ impl <'_, T: '_ + Copy> Iterator for CircularBufferIterator<'_, T> {
   type Item = T;
 
   fn next(&mut self) -> Option<T> {
-    if self.position >= self.limit {
-      None
-    } else {
-      let at = self.position % self.buffer.data.len();
-      self.position += 1;
-      match self.buffer.data.get(at) {
-        Some(v) => Some(*v),
-        None => None
+    if self.pos >= self.end {
+      if self.wrap {
+        self.pos    = 1;
+        self.end    = self.start;
+        self.wrap   = false;
+        Some(self.slice[0])
+      } else {
+        None
       }
+    } else {
+      let at     = self.pos;
+      self.pos  += 1;
+      Some(self.slice[at])
     }
   }
 }
@@ -93,6 +128,46 @@ pub fn tests() {
   for i in it {
     println!("CB: {}", i);
   }
+
+  let i2 = x.iter();
+  for i in i2 {
+    println!(".2: {}", i);
+  }
+
+  let mut y = CircularBuffer::new(4, 0 as i32);
+  y.put(|v| *v = 1);
+  y.put(|v| *v = 2);
+  {
+    for i in y.iter() {
+      println!("/2: {}", i);
+    }
+  }
+
+  y.put(|v| *v = 3);
+  y.put(|v| *v = 4);
+
+  {
+    for i in y.iter() {
+      println!("/4: {}", i);
+    }
+  }
+
+  y.put(|v| *v = 5);
+
+  {
+    for i in y.iter() {
+      println!("/5: {}", i);
+    }
+  }
+
+  y.put(|v| *v = 6);
+
+  {
+    for i in y.iter() {
+      println!("/6: {}", i);
+    }
+  }
+
 }
 
 #[cfg(test)]
