@@ -2,15 +2,14 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct CircularBuffer<T : Copy> {
-  seqno       : AtomicUsize,
-  data        : Vec<T>,
-  size        : usize,
+  seqno       : AtomicUsize,        // the ID of the last written item
+  data        : Vec<T>,             // (2*n)+1 preallocated elements
+  size        : usize,              // n
 
-  // reference numbers to data items (writer, reader and tmp):
-  write_to    : Vec<AtomicUsize>,
-  read_from   : Vec<usize>,
-  write_tmp   : usize,
-  max_read    : usize,
+  buffer      : Vec<AtomicUsize>,   // (positions+seqno)[]
+  read_priv   : Vec<usize>,         // positions belong to the reader
+  write_tmp   : usize,              // temporary position where the writer writes first
+  max_read    : usize,              // reader's last read seqno
 }
 
 struct CircularBufferIterator<'a, T: 'a + Copy> {
@@ -29,8 +28,8 @@ impl <T : Copy> CircularBuffer<T> {
       seqno      : AtomicUsize::new(0),
       data       : vec![],
       size       : size,
-      write_to   : vec![],
-      read_from  : vec![],
+      buffer     : vec![],
+      read_priv  : vec![],
       write_tmp  : 0,
       max_read   : 0,
     };
@@ -40,8 +39,8 @@ impl <T : Copy> CircularBuffer<T> {
     ret.data.resize((size*2)+1, default_value);
 
     for i in 0..size {
-      ret.write_to.push(AtomicUsize::new((1+i) << 16));
-      ret.read_from.push(1+size+i);
+      ret.buffer.push(AtomicUsize::new((1+i) << 16));
+      ret.read_priv.push(1+size+i);
     }
 
     ret
@@ -66,7 +65,7 @@ impl <T : Copy> CircularBuffer<T> {
     let pos    = seqno % self.size;
 
     // get a reference to the writer flag
-    match self.write_to.get_mut(pos) {
+    match self.buffer.get_mut(pos) {
       Some(v) => {
         let mut old_flag : usize = (*v).load(Ordering::SeqCst);
         let mut old_pos  : usize = old_flag >> 16;
@@ -85,7 +84,7 @@ impl <T : Copy> CircularBuffer<T> {
           };
         };
       },
-      None => { panic!("write_to index is out of bounds {}", pos); }
+      None => { panic!("buffer index is out of bounds {}", pos); }
     }
 
     // increase sequence number
@@ -95,20 +94,22 @@ impl <T : Copy> CircularBuffer<T> {
   fn iter(&mut self) -> CircularBufferIterator<T> {
     let mut seqno : usize = self.seqno.load(Ordering::SeqCst);
     let mut count : usize = 0;
+    let max_read : usize = self.max_read;
+    self.max_read = seqno;
 
     loop {
-      if count >= self.size || seqno == 0 { break; }
+      if count >= self.size || seqno <= max_read || seqno == 0 { break; }
       let pos = (seqno-1) % self.size;
 
-      match self.read_from.get_mut(count) {
+      match self.read_priv.get_mut(count) {
         Some(r) => {
-          match self.write_to.get_mut(pos) {
+          match self.buffer.get_mut(pos) {
             Some(v) => {
               let old_flag : usize = (*v).load(Ordering::SeqCst);
               let old_pos  : usize = old_flag >> 16;
               let old_seq  : usize = old_flag & 0xffff;
               let new_flag : usize = (*r << 16) + (old_seq & 0xffff);
-              
+
               if old_flag == (*v).compare_and_swap(old_flag, new_flag, Ordering::SeqCst) {
                 *r = old_pos;
                 seqno -=1;
@@ -117,16 +118,16 @@ impl <T : Copy> CircularBuffer<T> {
                 break;
               }
             },
-            None => { panic!("write_to index is out of bounds {}", pos); }
+            None => { panic!("buffer index is out of bounds {}", pos); }
           }
         },
-        None => { panic!("read_from index is out of bounds {}", count); }
+        None => { panic!("read_priv index is out of bounds {}", count); }
       }
     }
 
     CircularBufferIterator {
       data    : self.data.as_slice(),
-      revpos  : self.read_from.as_slice(),
+      revpos  : self.read_priv.as_slice(),
       count   : count,
     }
   }
@@ -157,48 +158,59 @@ pub fn tests() {
     x.put(|v| *v = 5);
   }
 
-  println!("T: {:?}", x.write_tmp);
-
-  for i in &x.write_to {
-    let pos = i.load(Ordering::SeqCst) >> 16;
-    let seq = i.load(Ordering::SeqCst) & 0xffff;
-    println!("W: {:?}/{:?}", pos,seq);
-  }
-
-  for i in &x.read_from {
-    println!("R: {:?}", i);
-  }
-
   {
     for i in x.iter() {
       println!("--: {}", i);
     }
   }
-
-  println!("T: {:?}", x.write_tmp);
-
-  for i in &x.write_to {
-    let pos = i.load(Ordering::SeqCst) >> 16;
-    let seq = i.load(Ordering::SeqCst) & 0xffff;
-    println!("W: {:?}/{:?}", pos,seq);
-  }
-
-  for i in &x.read_from {
-    println!("R: {:?}", i);
-  }
 }
 
 #[cfg(test)]
 mod tests {
-  //use super::CircularBuffer;
+  use super::CircularBuffer;
 
   #[test]
   #[should_panic]
-  fn t0() {
-    panic!("panic");
+  fn create_zero_sized() {
+    let _x = CircularBuffer::new(0, 0 as i32);
   }
 
   #[test]
-  fn t1() {
+  fn empty_buffer() {
+    let mut x = CircularBuffer::new(1, 0 as i32);
+    assert_eq!(x.iter().count(), 0);
+  }
+
+  #[test]
+  fn sum_available() {
+    let mut x = CircularBuffer::new(4, 0 as i32);
+    x.put(|v| *v = 2);
+    x.put(|v| *v = 4);
+    x.put(|v| *v = 6);
+    x.put(|v| *v = 8);
+    x.put(|v| *v = 10);
+    let sum = x.iter().take(3).fold(0, |acc, num| acc + num);
+    assert_eq!(sum, 18);
+  }
+
+  #[test]
+  fn overload_buffer() {
+    let mut x = CircularBuffer::new(2, 0 as i32);
+    x.put(|v| *v = 1);
+    x.put(|v| *v = 2);
+    x.put(|v| *v = 3);
+    assert_eq!(x.iter().count(), 2);
+  }
+
+  #[test]
+  fn read_twice() {
+    let mut x = CircularBuffer::new(2, 0 as i32);
+    x.put(|v| *v = 1);
+    assert_eq!(x.iter().count(), 1);
+    assert_eq!(x.iter().count(), 0);
+    x.put(|v| *v = 2);
+    x.put(|v| *v = 3);
+    assert_eq!(x.iter().count(), 2);
+    assert_eq!(x.iter().count(), 0);
   }
 }

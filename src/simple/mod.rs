@@ -128,46 +128,6 @@ pub fn tests() {
   for i in it {
     println!("CB: {}", i);
   }
-
-  let i2 = x.iter();
-  for i in i2 {
-    println!(".2: {}", i);
-  }
-
-  let mut y = CircularBuffer::new(4, 0 as i32);
-  y.put(|v| *v = 1);
-  y.put(|v| *v = 2);
-  {
-    for i in y.iter() {
-      println!("/2: {}", i);
-    }
-  }
-
-  y.put(|v| *v = 3);
-  y.put(|v| *v = 4);
-
-  {
-    for i in y.iter() {
-      println!("/4: {}", i);
-    }
-  }
-
-  y.put(|v| *v = 5);
-
-  {
-    for i in y.iter() {
-      println!("/5: {}", i);
-    }
-  }
-
-  y.put(|v| *v = 6);
-
-  {
-    for i in y.iter() {
-      println!("/6: {}", i);
-    }
-  }
-
 }
 
 #[cfg(test)]
