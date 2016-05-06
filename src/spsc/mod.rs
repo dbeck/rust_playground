@@ -1,7 +1,7 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-struct CircularBuffer<T : Copy + Send> {
+struct CircularBuffer<T : Copy> {
   seqno       : AtomicUsize,        // the ID of the last written item
   data        : Vec<T>,             // (2*n)+1 preallocated elements
   size        : usize,              // n
@@ -12,14 +12,13 @@ struct CircularBuffer<T : Copy + Send> {
   max_read    : usize,              // reader's last read seqno
 }
 
-struct CircularBufferIterator<'a, T: 'a + Copy + Send> {
+pub struct CircularBufferIterator<'a, T: 'a + Copy> {
   data   : &'a [T],
   revpos : &'a [usize],
   count  : usize,
 }
 
-impl <T : Copy + Send> CircularBuffer<T> {
-
+impl <T : Copy> CircularBuffer<T> {
   fn new(size : usize, default_value : T) -> CircularBuffer<T> {
 
     if size == 0 { panic!("size cannot be zero"); }
@@ -134,7 +133,7 @@ impl <T : Copy + Send> CircularBuffer<T> {
   }
 }
 
-impl <'_, T: '_ + Copy + Send> Iterator for CircularBufferIterator<'_, T> {
+impl <'_, T: '_ + Copy> Iterator for CircularBufferIterator<'_, T> {
   type Item = T;
 
   fn next(&mut self) -> Option<T> {
@@ -152,17 +151,17 @@ impl <'_, T: '_ + Copy + Send> Iterator for CircularBufferIterator<'_, T> {
 use std::cell::UnsafeCell;
 use std::sync::Arc;
 
-pub struct Sender<T: Copy + Send> {
+pub struct Sender<T: Copy> {
   inner: Arc<UnsafeCell<CircularBuffer<T>>>,
 }
 
-unsafe impl<T: Copy + Send> Send for Sender<T> { }
+unsafe impl<T: Copy> Send for Sender<T> { }
 
-pub struct Receiver<T: Copy + Send> {
+pub struct Receiver<T: Copy> {
   inner: Arc<UnsafeCell<CircularBuffer<T>>>,
 }
 
-unsafe impl<T: Copy + Send> Send for Receiver<T> { }
+unsafe impl<T: Copy> Send for Receiver<T> { }
 
 pub fn channel<T: Copy + Send>(size : usize,
                                default_value : T) -> (Sender<T>, Receiver<T>) {
@@ -175,7 +174,7 @@ impl<T: Copy + Send> Sender<T> {
     Sender { inner: inner, }
   }
 
-  fn put<F>(&mut self, setter: F) -> usize
+  pub fn put<F>(&mut self, setter: F) -> usize
     where F : FnMut(&mut T)
   {
     unsafe { (*self.inner.get()).put(setter) }
@@ -187,14 +186,12 @@ impl<T: Copy + Send> Receiver<T> {
     Receiver { inner: inner, }
   }
 
-  fn iter(&mut self) -> CircularBufferIterator<T> {
+  pub fn iter(&mut self) -> CircularBufferIterator<T> {
     unsafe { (*self.inner.get()).iter() }
   }
 }
 
 pub fn tests() {
-  use std::thread;
-
   let mut x = CircularBuffer::new(4, 0 as i32);
 
   {
@@ -212,23 +209,6 @@ pub fn tests() {
       println!("--: {}", i);
     }
   }
-
-  let (mut tx, mut rx) = channel(7, 0 as i32);
-  let t = thread::spawn(move|| {
-    for i in 1..1000000 {
-      tx.put(|v| *v = i);
-    }
-  });
-
-  for _k in 1..1000 {
-    let mut prev = 0;
-    for i in rx.iter() {
-      if i < prev { panic!("invalid value read!"); }
-      prev = i;
-    }
-  }
-
-  t.join().unwrap();
 }
 
 #[cfg(test)]
